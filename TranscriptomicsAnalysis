@@ -1,0 +1,198 @@
+##RNA-Seq analysis:
+java -jar trimmomatic-0.35.jar PE -threads 12 *R1.fastq.gz *R2.fastq.gz output_R1_paired.fastq output_R1_unpaired.fastq output_R2_paired.fastq output_R2_unpaired.fastq ILLUMINACLIP:TruSeq3-PE.fa:2:30:10 LEADING:20 TRAILING:20 SLIDINGWINDOW:4:20 AVGQUAL:25 MINLEN:75;
+tophat2 --GTF /umd3.gtf --transcriptome-index trans_index/index --library-type fr-firststrand -p 8 -o test_thout umd32 Read1_clean.fastq Read2_clean.fastq
+samtools sort -n accepted_hits.bam -m 4G -o out.bam
+samtools view sort.bam > sort.sam
+htseq-count -s reverse -q sort.sam umd3.gtf > ht_test.txt
+python AltAnalyze.py --species Bos_taurus --update Official --version EnsMart96
+  --additional all
+python AltAnalyze.py --species Bos_taurus --platform RNASeq --bamDir "C:/BAMFiles"
+  --groupdir "C:/BAMFiles/groups.fourtissues.txt"
+  --compdir "C:/BAMFiles/comps.fourtissues.txt" --output "C:/BEDFiles"
+  --expname "fourtissues"
+or you can perform alternative splicing analysis by https://github.com/nsalomonis/altanalyze/wiki
+
+##DE gene analysis (using R)
+library(DESeq2)
+mydata <- read.table("onetissue.txt", header = TRUE, quote = '\t')
+mydata <- na.omit(mydata)
+names(mydata)[2:25] <- sampleNames
+countMatrix <- as.matrix(mydata[2:25])
+rownames(countMatrix) <-mydata[, 1]
+table2 <- data.frame(name = c("Sample1","Sample2","Sample3","Sample4","Sample5","Sample6","Sample7","Sample8","Sample9","Sample10","Sample11","Sample12","Sample13","Sample14","Sample15","Sample16","Sample17","Sample18","Sample19","Sample20","Sample21","Sample22","Sample23","Sample24"),condition = c("High-ratio","High-ratio","High-ratio","High-ratio","High-ratio","High-ratio","High-ratio","High-ratio","High-ratio","High-ratio","High-ratio","High-ratio","Low-ratio","Low-ratio","Low-ratio","Low-ratio","Low-ratio","Low-ratio","Low-ratio","Low-ratio","Low-ratio","Low-ratio","Low-ratio","Low-ratio"))
+rownames(table2) <- sampleNames
+head(countMatrix)
+dds <- DESeqDataSetFromMatrix(countMatrix, colData=table2, design= ~ condition)
+dds
+suppressMessages(dds2 <- DESeq(dds))
+rld <- rlogTransformation(dds2)
+exprSet_new=assay(rld)
+par(cex = 0.7)
+n.sample=ncol(countMatrix)
+if(n.sample>40) par(cex = 0.5)
+cols <- rainbow(n.sample*1.2)
+par(mfrow=c(2,2))
+boxplot(countMatrix, col = cols,main="expression value",las=2)
+boxplot(exprSet_new, col = cols,main="expression value",las=2)
+hist(countMatrix)
+hist(exprSet_new)
+resultsNames(dds2)
+res <-  results(dds2, contrast=c("condition","High-ratio","Low-ratio"))
+resOrdered <- res[order(res$padj),]
+resOrdered=as.data.frame(resOrdered)
+head(resOrdered)
+write.csv(resOrdered, "onetissueFA_degene.csv") 
+
+
+##PCA analysis
+data <-read.delim("DESeq2.normalized.symbol.txt")
+install.packages("psych","reshape2","ggplot2","factoextra")
+library(psych)
+library(reshape2)
+library(ggplot2)
+library(factoextra)
+exprData <-"DESeq2.normalized.symbol.txt"
+sampleFile <- "sampleFile.txt"
+data <- read.table(exprData, header=T, row.names=NULL,sep="\t")
+rownames_data <- make.names(data[,1],unique=T)
+data <- data[,-1,drop=F]
+rownames(data) <- rownames_data
+data <- data[rowSums(data)>0,]
+data <- data[apply(data, 1, var)!=0,]
+mads <- apply(data, 1, mad)
+data <- data[rev(order(mads)),]
+dim(data)
+data_t <- t(data)
+variableL <- ncol(data_t)
+if(sampleFile != "") {
+  sample <- read.table(sampleFile,header = T, row.names=1,sep="\t")
+  data_t_m <- merge(data_t, sample, by=0)
+  rownames(data_t_m) <- data_t_m$Row.names
+  data_t <- data_t_m[,-1]
+}
+pca <- prcomp(data_t[,1:variableL], scale=T)
+print(str(pca))
+library(factoextra)
+fviz_eig(pca, addlabels = TRUE)
+fviz_pca_ind(pca, repel=T)
+fviz_pca_ind(pca, col.ind=data_t$conditions, mean.point=F, addEllipses = T, legend.title="Groups")
+
+##WGCNA analysis (using R):
+setwd("~/Desktop/WGCNA")
+library(WGCNA)
+options(stringsAsFactors = FALSE)
+femData = read.csv("onetissue.csv")
+dim(femData);
+names(femData)
+datExpr0 = as.data.frame(t(femData[, -1]));
+names(datExpr0) = femData$gene;
+rownames(datExpr0) = names(femData)[-1];
+gsg = goodSamplesGenes(datExpr0, verbose = 3);
+gsg$allOK
+if (!gsg$allOK)
+{
+if (sum(!gsg$goodGenes)>0)
+     printFlush(paste("Removing genes:", paste(names(datExpr0)[!gsg$goodGenes], collapse = ", ")));
+  if (sum(!gsg$goodSamples)>0)
+     printFlush(paste("Removing samples:", paste(rownames(datExpr0)[!gsg$goodSamples], collapse = ", ")));
+  datExpr0 = datExpr0[gsg$goodSamples, gsg$goodGenes]
+}
+install.packages("flashClust")  
+library(flashClust)
+sampleTree = flashClust(dist(datExpr0), method = "average")
+par(cex = 0.6);
+par(mar = c(8,8,2,2))
+plot(sampleTree, main = "Sample clustering to detect outliers", sub="", xlab="", cex.lab = 1.5, cex.axis = 1.5, cex.main = 2)
+abline(h = 60000, col = "red");
+clust = cutreeStatic(sampleTree, cutHeight = 60000, minSize = 10)
+table(clust)
+keepSamples = (clust==1)
+datExpr = datExpr0[keepSamples, ]
+nGenes = ncol(datExpr)
+nSamples = nrow(datExpr)
+traitData = read.csv("FAcomposition.csv");
+dim(traitData)
+names(traitData)
+allTraits = traitData[, -1];
+dim(allTraits)
+names(allTraits)
+femaleSamples = rownames(datExpr);
+traitRows = match(femaleSamples, allTraits$cows);
+datTraits = allTraits[traitRows, -1];
+rownames(datTraits) = allTraits[traitRows, 1];
+collectGarbage();
+sampleTree2 = flashClust(dist(datExpr), method = "average")
+traitColors = numbers2colors(datTraits, signed = FALSE);
+plotDendroAndColors(sampleTree2, traitColors,
+                  groupLabels = names(datTraits),
+                  main = "Sample dendrogram and trait heatmap")
+save(datExpr, datTraits, file = "FemaleLiver-01-dataInput.RData")
+options(stringsAsFactors = FALSE)
+enableWGCNAThreads()
+lnames = load(file = "FemaleLiver-01-dataInput.RData")
+lnames
+powers = c(c(1:10), seq(from = 12, to=20, by=2))
+sft = pickSoftThreshold(datExpr, powerVector = powers, verbose = 5)
+sizeGrWindow(9, 5)
+par(mfrow = c(1,2));
+cex1 =0.9;
+plot(sft$fitIndices[,1], -sign(sft$fitIndices[,3])*sft$fitIndices[,2],
+     xlab="Soft Threshold (power)",ylab="Scale Free Topology Model Fit,signed R^2",type="n",
+    main = paste("Scale independence"));
+text(sft$fitIndices[,1], -sign(sft$fitIndices[,3])*sft$fitIndices[,2],
+    labels=powers,cex=cex1,col="red");
+abline(h=0.90,col="red")
+plot(sft$fitIndices[,1], sft$fitIndices[,5],
+    xlab="Soft Threshold (power)",ylab="Mean Connectivity", type="n",
+    main = paste("Mean connectivity"))
+text(sft$fitIndices[,1], sft$fitIndices[,5], labels=powers, cex=cex1,col="red")
+net = blockwiseModules(datExpr, power = sft$powerEstimate,
+                     TOMType = "unsigned", minModuleSize = 30,
+                     reassignThreshold = 0, mergeCutHeight = 0.25,
+                     numericLabels = TRUE, pamRespectsDendro = FALSE,
+                     saveTOMs = TRUE,
+                     saveTOMFileBase = "femaleMouseTOM",
+verbose = 3) 
+table(net$colors)
+sizeGrWindow(12, 9)
+mergedColors = labels2colors(net$colors)
+plotDendroAndColors(net$dendrograms[[1]], mergedColors[net$blockGenes[[1]]],
+                  "Module colors",
+                  dendroLabels = FALSE, hang = 0.03,
+                  addGuide = TRUE, guideHang = 0.05)
+moduleLabels = net$colors
+moduleColors = labels2colors(net$colors)
+MEs = net$MEs;
+geneTree = net$dendrograms[[1]];
+save(MEs, moduleLabels, moduleColors, geneTree,
+    file = "FemaleLiver-02-networkConstruction-auto.RData")
+options(stringsAsFactors = FALSE)
+lnames = load(file = "FemaleLiver-01-dataInput.RData");
+lnames
+lnames = load(file = "FemaleLiver-02-networkConstruction-auto.RData");
+lnames
+nGenes = ncol(datExpr);
+nSamples = nrow(datExpr);
+MEs0 = moduleEigengenes(datExpr, moduleColors)$eigengenes
+MEs = orderMEs(MEs0)
+moduleTraitCor = cor(MEs, datTraits, use = "p");
+moduleTraitPvalue = corPvalueStudent(moduleTraitCor, nSamples);
+sizeGrWindow(10,6)
+textMatrix = paste(signif(moduleTraitCor, 2), "\n(",
+                        signif(moduleTraitPvalue, 1), ")", sep = "");
+dim(textMatrix) = dim(moduleTraitCor)
+par(mar = c(6, 25, 3, 3));
+labeledHeatmap(Matrix = moduleTraitCor,
+             xLabels = names(datTraits),
+             yLabels = names(MEs),
+             ySymbols = names(MEs),
+             colorLabels = FALSE,
+             colors = blueWhiteRed(50),
+             textMatrix = textMatrix,
+             setStdMargins = FALSE,cex.lab=0.8,
+             cex.text = 0.5,
+             zlim = c(-0.5,0.5),
+main = paste("Module-trait relationships"))
+
+
+
