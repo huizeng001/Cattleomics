@@ -4,7 +4,11 @@ tophat2 --GTF /umd3.gtf --transcriptome-index trans_index/index --library-type f
 samtools sort -n accepted_hits.bam -m 4G -o out.bam
 samtools view sort.bam > sort.sam
 htseq-count -s reverse -q sort.sam umd3.gtf > ht_test.txt
+
+##Splicing variant analysis from BAM file
 python AltAnalyze.py --species Bos_taurus --update Official --version EnsMart96
+python BAMtoJunctionBED.py --i BAM_dir --species Bos_taurus --r software/AltAnalyze/AltDatabase/EnsMart96/ensembl/Bos_taurus/Bos_taurus_Ensembl_exon.txt
+python BAMtoExonBED.py --i BAM_dir --r exonrefdir/Bos_taurus.bed --s Bos_taurus
   --additional all
 python AltAnalyze.py --species Bos_taurus --platform RNASeq --bamDir "C:/BAMFiles"
   --groupdir "C:/BAMFiles/groups.fourtissues.txt"
