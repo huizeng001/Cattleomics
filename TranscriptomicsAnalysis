@@ -1,20 +1,16 @@
 ##RNA-Seq analysis:
 java -jar trimmomatic-0.35.jar PE -threads 12 *R1.fastq.gz *R2.fastq.gz output_R1_paired.fastq output_R1_unpaired.fastq output_R2_paired.fastq output_R2_unpaired.fastq ILLUMINACLIP:TruSeq3-PE.fa:2:30:10 LEADING:20 TRAILING:20 SLIDINGWINDOW:4:20 AVGQUAL:25 MINLEN:75;
-tophat2 --GTF /umd3.gtf --transcriptome-index trans_index/index --library-type fr-firststrand -p 8 -o test_thout umd32 Read1_clean.fastq Read2_clean.fastq
-samtools sort -n accepted_hits.bam -m 4G -o out.bam
-samtools view sort.bam > sort.sam
-htseq-count -s reverse -q sort.sam umd3.gtf > ht_test.txt
+conda install -c bioconda hisat2
+hisat2-build ARS-UCD1.2.fa ARS-UCD.idx
+extract_exons.py /Volumes/LaCie/Huizeng/genome/ARS-UCD1.2.gtf> genome.exon
+extract_splice_sites.py Homo_sapiens.GRCh38.83.chr.gtf > genome.ss
+hisat2 -p 16 -x /Volumes/LaCie/Huizeng/genome/ARS-UCD.idx -1 out.R1.fastq -2 out.R2.fastq -S out.sam 
+samtools sort -n out.sam -m 8G -o sort.bam
+samtools view sort.bam > sort.sam 
+htseq-count -s reverse -q sort.sam /Volumes/LaCie/Huizeng/genome/ARS-UCD1.2.gtf > ht_test.txt 
 
 ##Splicing variant analysis from BAM file
-python AltAnalyze.py --species Bos_taurus --update Official --version EnsMart96
-python BAMtoJunctionBED.py --i BAM_dir --species Bos_taurus --r software/AltAnalyze/AltDatabase/EnsMart96/ensembl/Bos_taurus/Bos_taurus_Ensembl_exon.txt
-python BAMtoExonBED.py --i BAM_dir --r exonrefdir/Bos_taurus.bed --s Bos_taurus
-  --additional all
-python AltAnalyze.py --species Bos_taurus --platform RNASeq --bamDir "C:/BAMFiles"
-  --groupdir "C:/BAMFiles/groups.fourtissues.txt"
-  --compdir "C:/BAMFiles/comps.fourtissues.txt" --output "C:/BEDFiles"
-  --expname "fourtissues"
-or you can perform alternative splicing analysis by https://github.com/nsalomonis/altanalyze/wiki
+https://github.com/Xinglab/rmats-turbo/releases/tag/v4.1.0
 
 ##DE gene analysis (using R)
 library(DESeq2)
